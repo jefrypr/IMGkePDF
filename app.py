@@ -3,6 +3,7 @@ from PIL import Image
 from fpdf import FPDF
 import tempfile
 import os
+import hashlib
 
 # ── Konfigurasi Halaman Streamlit ─────────────────────────────────────
 st.set_page_config(page_title="Foto ke PDF Waterfall", page_icon="📸", layout="centered")
@@ -11,17 +12,32 @@ st.set_page_config(page_title="Foto ke PDF Waterfall", page_icon="📸", layout=
 DPI               = 300
 A4_WIDTH_MM       = 210
 A4_HEIGHT_MM      = 297
-IMG_WIDTH_MM      = 70      # lebar tetap setiap foto; tinggi proporsional
-COLS              = 3       # jumlah kolom waterfall
-GAP_MM            = 1       # jarak antar gambar (horizontal & vertikal)
+IMG_WIDTH_MM      = 70
+COLS              = 3
+GAP_MM            = 1
 TOP_MARGIN_MM     = 0
 BOTTOM_MARGIN_MM  = 0
-BORDER_MM         = 0.5     # tebal garis tepi hitam
-CAPTION_HEIGHT_MM = 4.0     # tinggi area keterangan di PDF (mm)
-CAPTION_FONT_PT   = 5       # ukuran font keterangan di PDF (point)
+BORDER_MM         = 0.5
+CAPTION_HEIGHT_MM = 4.0
+CAPTION_FONT_PT   = 5
 
 _total_cols_width = COLS * IMG_WIDTH_MM + (COLS - 1) * GAP_MM
 LEFT_MARGIN_MM    = (A4_WIDTH_MM - _total_cols_width) / 2
+
+# ── Key session_state untuk penyimpanan caption ────────────────────────
+# Dua lapis: widget key (per text_input) + data key (source of truth untuk PDF)
+WF_CAPS = "wf_captions_data"   # dict {i: str}  → dibaca saat generate PDF
+
+
+def make_widget_key(i: int, fname: str) -> str:
+    """
+    Buat widget key yang AMAN untuk st.text_input.
+    Kunci lama pakai langsung nama file → karakter spasi/kurung/non-ASCII
+    menyebabkan Streamlit gagal track state → caption hilang.
+    Solusi: hash fname jadi string hex pendek, pasti aman.
+    """
+    h = hashlib.md5(fname.encode("utf-8", errors="replace")).hexdigest()[:8]
+    return f"wfc_{i}_{h}"
 
 
 # ── Fungsi Helper ─────────────────────────────────────────────────────
@@ -34,7 +50,7 @@ def process_image_data(file_bytes):
     """Rotasi portrait → landscape, resize proporsional."""
     try:
         import io
-        img = Image.open(io.BytesIO(file_bytes)).convert('RGB')
+        img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
         if img.height > img.width:
             img = img.rotate(-90, expand=True)
         target_w = mm_to_px(IMG_WIDTH_MM)
@@ -50,33 +66,28 @@ def process_image_data(file_bytes):
 def simulate_waterfall(image_list, extra_h=0):
     """
     Jalankan simulasi algoritma waterfall persis seperti saat generate PDF.
-    Kembalikan: col_assignment[i] = kolom (0/1/2) tempat foto ke-i diletakkan.
+    Kembalikan col_assign[i] = kolom (0/1/2) tempat foto ke-i diletakkan.
     Dipakai agar urutan preview = urutan PDF.
     """
     if not image_list:
         return []
-    max_y        = A4_HEIGHT_MM - BOTTOM_MARGIN_MM
-    col_heights  = [TOP_MARGIN_MM] * COLS
-    col_assign   = []
-
+    max_y       = A4_HEIGHT_MM - BOTTOM_MARGIN_MM
+    col_heights = [TOP_MARGIN_MM] * COLS
+    col_assign  = []
     for _, h_mm, _ in image_list:
         slot_h  = h_mm + extra_h
         min_col = col_heights.index(min(col_heights))
         y       = col_heights[min_col]
-
-        if y + slot_h > max_y:           # pindah halaman → reset
+        if y + slot_h > max_y:
             col_heights = [TOP_MARGIN_MM] * COLS
             min_col     = 0
             y           = col_heights[min_col]
-
         col_assign.append(min_col)
         col_heights[min_col] += slot_h + GAP_MM
-
     return col_assign
 
 
 def estimate_pages(image_list, extra_h=0):
-    """Estimasi jumlah halaman PDF."""
     if not image_list:
         return 0
     max_y       = A4_HEIGHT_MM - BOTTOM_MARGIN_MM
@@ -108,9 +119,45 @@ def fit_caption(pdf, text, max_width_mm):
     return text
 
 
-def caption_key(idx, fname):
-    """Key session_state yang konsisten untuk tiap foto."""
-    return f"cap_{idx}_{fname}"
+def init_caption_state(image_data):
+    """
+    Inisialisasi WF_CAPS (data dict) dan widget keys untuk semua foto.
+    Dipanggil setiap rerun, aman untuk dipanggil berulang kali.
+    """
+    if WF_CAPS not in st.session_state:
+        st.session_state[WF_CAPS] = {}
+
+    for i, (_, _, fname) in enumerate(image_data):
+        default_text = os.path.splitext(fname)[0]
+
+        # Inisialisasi data dict (source of truth)
+        if i not in st.session_state[WF_CAPS]:
+            st.session_state[WF_CAPS][i] = default_text
+
+        # Inisialisasi widget key (aman, tanpa karakter khusus)
+        wk = make_widget_key(i, fname)
+        if wk not in st.session_state:
+            st.session_state[wk] = st.session_state[WF_CAPS][i]
+
+
+def sync_widget_to_data(i, fname):
+    """
+    Setelah text_input dirender, sinkronisasi nilai widget → WF_CAPS.
+    Dipanggil tepat setelah st.text_input() agar data selalu up-to-date.
+    """
+    wk  = make_widget_key(i, fname)
+    val = st.session_state.get(wk, "")
+    st.session_state[WF_CAPS][i] = val
+
+
+def get_caption_for_pdf(i, fname):
+    """Ambil caption untuk foto ke-i dengan fallback berlapis."""
+    caps = st.session_state.get(WF_CAPS, {})
+    text = caps.get(i, "")
+    if not text or not text.strip():
+        # Ultimate fallback: nama file tanpa ekstensi
+        text = os.path.splitext(fname)[0]
+    return text.strip()
 
 
 # ── UI Aplikasi ───────────────────────────────────────────────────────
@@ -124,7 +171,7 @@ st.markdown(
 uploaded_files = st.file_uploader(
     "➕ Tambahkan Foto (JPG, JPEG, PNG)",
     type=["jpg", "jpeg", "png"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
 )
 
 if uploaded_files:
@@ -133,7 +180,7 @@ if uploaded_files:
     with col1:
         sort_mode = st.selectbox(
             "Urutan Foto:",
-            options=["Sesuai Urutan Upload", "Nama File A → Z", "Nama File Z → A"]
+            options=["Sesuai Urutan Upload", "Nama File A → Z", "Nama File Z → A"],
         )
     with col2:
         pdf_name = st.text_input(
@@ -161,19 +208,16 @@ if uploaded_files:
         help=(
             "Aktifkan untuk menambahkan teks keterangan di bawah tiap foto dalam PDF. "
             "Isi keterangan bisa diatur di bagian Preview Galeri Foto."
-        )
+        ),
     )
 
     extra_h = CAPTION_HEIGHT_MM if enable_captions else 0
 
-    # ── FIX BUG #1: Inisialisasi semua caption key di sini, SEBELUM expander ──
-    # Ini menjamin semua key sudah ada di session_state, terlepas apakah
-    # expander pernah dibuka atau tidak.
-    if enable_captions:
-        for i, (_, _, fname) in enumerate(image_data):
-            skey = caption_key(i, fname)
-            if skey not in st.session_state:
-                st.session_state[skey] = os.path.splitext(fname)[0]
+    # ── Inisialisasi caption state SEBELUM apapun yang butuh nilainya ──
+    # (termasuk sebelum expander dan sebelum tombol generate)
+    # init_caption_state selalu dipanggil agar WF_CAPS selalu siap,
+    # tapi nilainya hanya benar-benar dipakai saat enable_captions=True.
+    init_caption_state(image_data)
 
     est_pages = estimate_pages(image_data, extra_h=extra_h)
     st.info(
@@ -182,21 +226,9 @@ if uploaded_files:
 
     # ── Tombol Eksekusi ───────────────────────────────────────────────
     if st.button("✅ Generate PDF", type="primary", use_container_width=True):
-
-        # Baca keterangan dari session_state (sudah pasti ada karena diinisialisasi di atas)
-        # FIX: gunakan INDEX (i) sebagai key, bukan fname, agar foto dengan
-        # nama file sama tidak saling overwrite.
-        captions_map = {}
-        if enable_captions:
-            for i, (_, _, fname) in enumerate(image_data):
-                captions_map[i] = st.session_state.get(
-                    caption_key(i, fname),
-                    os.path.splitext(fname)[0]
-                )
-
         progress_bar = st.progress(0, text="Menyiapkan PDF...")
 
-        pdf = FPDF(unit='mm', format='A4')
+        pdf = FPDF(unit="mm", format="A4")
         pdf.add_page()
         col_x       = [LEFT_MARGIN_MM + c * (IMG_WIDTH_MM + GAP_MM) for c in range(COLS)]
         max_y       = A4_HEIGHT_MM - BOTTOM_MARGIN_MM
@@ -217,7 +249,7 @@ if uploaded_files:
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
                 temp_path = tmp.name
-                img.save(temp_path, 'JPEG', quality=95)
+                img.save(temp_path, "JPEG", quality=95)
 
             pdf.image(temp_path, x=x, y=y, w=IMG_WIDTH_MM, h=h_mm)
             os.remove(temp_path)
@@ -226,32 +258,26 @@ if uploaded_files:
             pdf.set_line_width(BORDER_MM)
             pdf.rect(x, y, IMG_WIDTH_MM, h_mm)
 
-            # Render keterangan di PDF
+            # ── Render keterangan di PDF ──────────────────────────────
             if enable_captions:
-                raw_text = captions_map.get(i, "")   # pakai index i
-                if raw_text and raw_text.strip():
-                    pdf.set_font('Helvetica', size=CAPTION_FONT_PT)
+                # get_caption_for_pdf membaca dari WF_CAPS yang sudah di-sync
+                raw_text = get_caption_for_pdf(i, fname)
+                if raw_text:
+                    pdf.set_font("Helvetica", size=CAPTION_FONT_PT)
                     pdf.set_text_color(0, 0, 0)
-                    final_text = fit_caption(pdf, raw_text.strip(), IMG_WIDTH_MM - 2)
+                    final_text = fit_caption(pdf, raw_text, IMG_WIDTH_MM - 2)
                     if final_text:
                         pdf.set_xy(x, y + h_mm + 0.8)
-                        pdf.cell(
-                            IMG_WIDTH_MM,
-                            CAPTION_HEIGHT_MM - 0.8,
-                            final_text,
-                            align='C'
-                        )
+                        pdf.cell(IMG_WIDTH_MM, CAPTION_HEIGHT_MM - 0.8, final_text, align="C")
 
             col_heights[min_col] = y + slot_h + GAP_MM
             progress_bar.progress(
                 (i + 1) / n_photos,
-                text=f"Memproses {i+1} dari {n_photos} foto..."
+                text=f"Memproses {i + 1} dari {n_photos} foto...",
             )
 
-        safe_name    = "".join(
-            c for c in pdf_name if c.isalnum() or c in (' ', '_', '-')
-        ).strip()
-        output_fname = (safe_name or 'output_foto') + '.pdf'
+        safe_name    = "".join(c for c in pdf_name if c.isalnum() or c in (" ", "_", "-")).strip()
+        output_fname = (safe_name or "output_foto") + ".pdf"
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
             pdf_path = tmp_pdf.name
@@ -269,7 +295,7 @@ if uploaded_files:
             data=pdf_bytes,
             file_name=output_fname,
             mime="application/pdf",
-            use_container_width=True
+            use_container_width=True,
         )
 
     # ── Preview Galeri Foto ───────────────────────────────────────────
@@ -280,27 +306,27 @@ if uploaded_files:
             with hdr_col:
                 st.caption(
                     "✏️ Isi keterangan di bawah tiap foto. "
-                    "Biarkan kosong jika foto tidak perlu keterangan."
+                    "Biarkan kosong untuk tidak menampilkan keterangan."
                 )
             with btn_col:
                 if st.button(
                     "🔄 Reset",
                     help="Kembalikan semua keterangan ke nama file aslinya",
-                    use_container_width=True
+                    use_container_width=True,
                 ):
+                    # Reset widget keys dan data dict sekaligus
                     for i, (_, _, fname) in enumerate(image_data):
-                        st.session_state[caption_key(i, fname)] = os.path.splitext(fname)[0]
+                        default_text = os.path.splitext(fname)[0]
+                        wk = make_widget_key(i, fname)
+                        st.session_state[wk]         = default_text
+                        st.session_state[WF_CAPS][i] = default_text
                     st.rerun()
 
-        # ── FIX BUG #2: Preview menggunakan urutan waterfall yang sama dengan PDF ──
-        # Simulasikan penempatan kolom, lalu tampilkan per kolom agar
-        # visual preview = visual PDF.
-        col_assign = simulate_waterfall(image_data, extra_h=extra_h)
-
-        # Kelompokkan index foto berdasarkan kolom yang didapat dari simulasi
+        # ── Preview dengan urutan waterfall = urutan PDF ──────────────
+        col_assign  = simulate_waterfall(image_data, extra_h=extra_h)
         cols_photos = [[] for _ in range(COLS)]
-        for idx, col in enumerate(col_assign):
-            cols_photos[col].append(idx)
+        for idx, col_idx in enumerate(col_assign):
+            cols_photos[col_idx].append(idx)
 
         preview_cols = st.columns(COLS)
         for col_idx in range(COLS):
@@ -310,15 +336,19 @@ if uploaded_files:
                     st.image(img, use_container_width=True)
 
                     if enable_captions:
-                        skey = caption_key(photo_idx, fname)
-                        # Key sudah diinisialisasi di atas, langsung render
+                        wk = make_widget_key(photo_idx, fname)
+                        # Render text_input dengan widget key yang AMAN (hash-based)
                         st.text_input(
                             label="keterangan",
-                            key=skey,
+                            key=wk,
                             max_chars=80,
                             label_visibility="collapsed",
-                            placeholder="Keterangan foto..."
+                            placeholder="Keterangan foto...",
                         )
+                        # ── SYNC: widget → WF_CAPS (source of truth) ─────
+                        # Dipanggil tepat setelah render agar nilai selalu
+                        # up-to-date sebelum tombol Generate diklik.
+                        sync_widget_to_data(photo_idx, fname)
                     else:
                         st.caption(f"[{photo_idx + 1}] {fname}")
 
