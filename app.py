@@ -24,20 +24,41 @@ CAPTION_FONT_PT   = 5
 _total_cols_width = COLS * IMG_WIDTH_MM + (COLS - 1) * GAP_MM
 LEFT_MARGIN_MM    = (A4_WIDTH_MM - _total_cols_width) / 2
 
-# ── Key session_state untuk penyimpanan caption ────────────────────────
-# Dua lapis: widget key (per text_input) + data key (source of truth untuk PDF)
-WF_CAPS = "wf_captions_data"   # dict {i: str}  → dibaca saat generate PDF
 
-
+# ── Widget key helper ─────────────────────────────────────────────────
 def make_widget_key(i: int, fname: str) -> str:
     """
-    Buat widget key yang AMAN untuk st.text_input.
-    Kunci lama pakai langsung nama file → karakter spasi/kurung/non-ASCII
-    menyebabkan Streamlit gagal track state → caption hilang.
-    Solusi: hash fname jadi string hex pendek, pasti aman.
+    Key aman untuk st.text_input — nama file bisa berisi spasi/karakter
+    khusus yang merusak Streamlit widget tracking, jadi kita hash fname-nya.
     """
     h = hashlib.md5(fname.encode("utf-8", errors="replace")).hexdigest()[:8]
     return f"wfc_{i}_{h}"
+
+
+def init_all_caption_keys(image_data):
+    """
+    Inisialisasi SEMUA widget-key caption ke default (nama file tanpa ekstensi)
+    SEBELUM widget apapun dirender. Dipanggil setiap rerun.
+
+    Satu sumber kebenaran: session_state[widget_key].
+    Tidak ada dict WF_CAPS terpisah → tidak ada masalah sinkronisasi.
+    """
+    for i, (_, _, fname) in enumerate(image_data):
+        wk = make_widget_key(i, fname)
+        if wk not in st.session_state:
+            st.session_state[wk] = os.path.splitext(fname)[0]
+
+
+def get_caption(i: int, fname: str) -> str:
+    """
+    Ambil caption foto ke-i langsung dari session_state (satu sumber).
+    Fallback ke nama file jika kosong.
+    """
+    wk   = make_widget_key(i, fname)
+    text = st.session_state.get(wk, "").strip()
+    if not text:
+        text = os.path.splitext(fname)[0].strip()
+    return text
 
 
 # ── Fungsi Helper ─────────────────────────────────────────────────────
@@ -65,9 +86,8 @@ def process_image_data(file_bytes):
 
 def simulate_waterfall(image_list, extra_h=0):
     """
-    Jalankan simulasi algoritma waterfall persis seperti saat generate PDF.
-    Kembalikan col_assign[i] = kolom (0/1/2) tempat foto ke-i diletakkan.
-    Dipakai agar urutan preview = urutan PDF.
+    Simulasi algoritma waterfall persis seperti PDF generation.
+    Kembalikan col_assign[i] = kolom (0/1/2) untuk foto ke-i.
     """
     if not image_list:
         return []
@@ -117,47 +137,6 @@ def fit_caption(pdf, text, max_width_mm):
             text = text[:-1]
         text += "..."
     return text
-
-
-def init_caption_state(image_data):
-    """
-    Inisialisasi WF_CAPS (data dict) dan widget keys untuk semua foto.
-    Dipanggil setiap rerun, aman untuk dipanggil berulang kali.
-    """
-    if WF_CAPS not in st.session_state:
-        st.session_state[WF_CAPS] = {}
-
-    for i, (_, _, fname) in enumerate(image_data):
-        default_text = os.path.splitext(fname)[0]
-
-        # Inisialisasi data dict (source of truth)
-        if i not in st.session_state[WF_CAPS]:
-            st.session_state[WF_CAPS][i] = default_text
-
-        # Inisialisasi widget key (aman, tanpa karakter khusus)
-        wk = make_widget_key(i, fname)
-        if wk not in st.session_state:
-            st.session_state[wk] = st.session_state[WF_CAPS][i]
-
-
-def sync_widget_to_data(i, fname):
-    """
-    Setelah text_input dirender, sinkronisasi nilai widget → WF_CAPS.
-    Dipanggil tepat setelah st.text_input() agar data selalu up-to-date.
-    """
-    wk  = make_widget_key(i, fname)
-    val = st.session_state.get(wk, "")
-    st.session_state[WF_CAPS][i] = val
-
-
-def get_caption_for_pdf(i, fname):
-    """Ambil caption untuk foto ke-i dengan fallback berlapis."""
-    caps = st.session_state.get(WF_CAPS, {})
-    text = caps.get(i, "")
-    if not text or not text.strip():
-        # Ultimate fallback: nama file tanpa ekstensi
-        text = os.path.splitext(fname)[0]
-    return text.strip()
 
 
 # ── UI Aplikasi ───────────────────────────────────────────────────────
@@ -213,15 +192,16 @@ if uploaded_files:
 
     extra_h = CAPTION_HEIGHT_MM if enable_captions else 0
 
-    # ── Inisialisasi caption state SEBELUM apapun yang butuh nilainya ──
-    # (termasuk sebelum expander dan sebelum tombol generate)
-    # init_caption_state selalu dipanggil agar WF_CAPS selalu siap,
-    # tapi nilainya hanya benar-benar dipakai saat enable_captions=True.
-    init_caption_state(image_data)
+    # ── INISIALISASI SEMUA WIDGET KEY SEBELUM APAPUN ─────────────────
+    # Wajib dipanggil sebelum tombol Generate maupun expander preview.
+    # Ini menjamin session_state[wk] selalu ada saat PDF dibuat,
+    # terlepas apakah expander pernah dibuka atau tidak.
+    init_all_caption_keys(image_data)
 
     est_pages = estimate_pages(image_data, extra_h=extra_h)
     st.info(
-        f"📷 **{n_photos}** foto siap diproses | 📄 Estimasi **{est_pages}** halaman PDF"
+        f"📷 **{n_photos}** foto siap diproses | "
+        f"📄 Estimasi **{est_pages}** halaman PDF"
     )
 
     # ── Tombol Eksekusi ───────────────────────────────────────────────
@@ -247,6 +227,7 @@ if uploaded_files:
                 x           = col_x[min_col]
                 y           = col_heights[min_col]
 
+            # Simpan & masukkan gambar ke PDF
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
                 temp_path = tmp.name
                 img.save(temp_path, "JPEG", quality=95)
@@ -254,21 +235,24 @@ if uploaded_files:
             pdf.image(temp_path, x=x, y=y, w=IMG_WIDTH_MM, h=h_mm)
             os.remove(temp_path)
 
+            # Border
             pdf.set_draw_color(0, 0, 0)
             pdf.set_line_width(BORDER_MM)
             pdf.rect(x, y, IMG_WIDTH_MM, h_mm)
 
-            # ── Render keterangan di PDF ──────────────────────────────
+            # Caption — dibaca langsung dari session_state (satu sumber)
             if enable_captions:
-                # get_caption_for_pdf membaca dari WF_CAPS yang sudah di-sync
-                raw_text = get_caption_for_pdf(i, fname)
+                raw_text = get_caption(i, fname)
                 if raw_text:
                     pdf.set_font("Helvetica", size=CAPTION_FONT_PT)
                     pdf.set_text_color(0, 0, 0)
                     final_text = fit_caption(pdf, raw_text, IMG_WIDTH_MM - 2)
                     if final_text:
                         pdf.set_xy(x, y + h_mm + 0.8)
-                        pdf.cell(IMG_WIDTH_MM, CAPTION_HEIGHT_MM - 0.8, final_text, align="C")
+                        pdf.cell(
+                            IMG_WIDTH_MM, CAPTION_HEIGHT_MM - 0.8,
+                            final_text, align="C"
+                        )
 
             col_heights[min_col] = y + slot_h + GAP_MM
             progress_bar.progress(
@@ -276,7 +260,9 @@ if uploaded_files:
                 text=f"Memproses {i + 1} dari {n_photos} foto...",
             )
 
-        safe_name    = "".join(c for c in pdf_name if c.isalnum() or c in (" ", "_", "-")).strip()
+        safe_name    = "".join(
+            c for c in pdf_name if c.isalnum() or c in (" ", "_", "-")
+        ).strip()
         output_fname = (safe_name or "output_foto") + ".pdf"
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
@@ -314,19 +300,17 @@ if uploaded_files:
                     help="Kembalikan semua keterangan ke nama file aslinya",
                     use_container_width=True,
                 ):
-                    # Reset widget keys dan data dict sekaligus
                     for i, (_, _, fname) in enumerate(image_data):
-                        default_text = os.path.splitext(fname)[0]
-                        wk = make_widget_key(i, fname)
-                        st.session_state[wk]         = default_text
-                        st.session_state[WF_CAPS][i] = default_text
+                        st.session_state[make_widget_key(i, fname)] = (
+                            os.path.splitext(fname)[0]
+                        )
                     st.rerun()
 
-        # ── Preview dengan urutan waterfall = urutan PDF ──────────────
+        # Preview urutan waterfall = urutan PDF
         col_assign  = simulate_waterfall(image_data, extra_h=extra_h)
         cols_photos = [[] for _ in range(COLS)]
-        for idx, col_idx in enumerate(col_assign):
-            cols_photos[col_idx].append(idx)
+        for photo_idx, col_idx in enumerate(col_assign):
+            cols_photos[col_idx].append(photo_idx)
 
         preview_cols = st.columns(COLS)
         for col_idx in range(COLS):
@@ -336,19 +320,16 @@ if uploaded_files:
                     st.image(img, use_container_width=True)
 
                     if enable_captions:
-                        wk = make_widget_key(photo_idx, fname)
-                        # Render text_input dengan widget key yang AMAN (hash-based)
+                        # Render text_input dengan widget key yang aman.
+                        # session_state[wk] sudah di-init oleh
+                        # init_all_caption_keys() di atas → nilai selalu ada.
                         st.text_input(
                             label="keterangan",
-                            key=wk,
+                            key=make_widget_key(photo_idx, fname),
                             max_chars=80,
                             label_visibility="collapsed",
                             placeholder="Keterangan foto...",
                         )
-                        # ── SYNC: widget → WF_CAPS (source of truth) ─────
-                        # Dipanggil tepat setelah render agar nilai selalu
-                        # up-to-date sebelum tombol Generate diklik.
-                        sync_widget_to_data(photo_idx, fname)
                     else:
                         st.caption(f"[{photo_idx + 1}] {fname}")
 
