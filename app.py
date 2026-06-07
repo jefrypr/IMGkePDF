@@ -7,6 +7,13 @@ import hashlib
 import io
 from datetime import datetime
 
+# ── Library Opsional: Clipboard Paste ────────────────────────────────
+try:
+    from streamlit_paste_button import paste_image_button
+    PASTE_SUPPORTED = True
+except ImportError:
+    PASTE_SUPPORTED = False
+
 # ── Konfigurasi Halaman ───────────────────────────────────────────────
 st.set_page_config(
     page_title="Foto Praktikum → PDF Print",
@@ -150,36 +157,28 @@ def fit_caption(pdf: FPDF, text: str, max_width_mm: float) -> str:
 # ═══════════════════════════════════════════════════════════════════════
 #  HELPER: HEADER IDENTITAS — kompak, di dalam A4
 # ═══════════════════════════════════════════════════════════════════════
-# Ukuran font dan tinggi baris dibuat sekecil mungkin agar ruang gambar
-# tidak tergerus. Keseluruhan header tidak pernah melampaui batas A4.
 
-HEADER_Y_START    = 1.5   # mm dari tepi atas kertas
-HEADER_LINE_GAP   = 0.5   # mm jarak antar baris
-HEADER_AFTER_LINE = 1.5   # mm padding setelah garis pemisah
-HEADER_FONT_MATA  = 7     # pt — nama mata praktikum (bold)
-HEADER_H_MATA     = 3.5   # mm — tinggi cell
-HEADER_FONT_JUDUL = 6     # pt — judul modul
-HEADER_H_JUDUL    = 3.0   # mm
-HEADER_FONT_TGL   = 5     # pt — tanggal (italic)
-HEADER_H_TGL      = 2.5   # mm
+HEADER_Y_START    = 1.5
+HEADER_LINE_GAP   = 0.5
+HEADER_AFTER_LINE = 1.5
+HEADER_FONT_MATA  = 7
+HEADER_H_MATA     = 3.5
+HEADER_FONT_JUDUL = 6
+HEADER_H_JUDUL    = 3.0
+HEADER_FONT_TGL   = 5
+HEADER_H_TGL      = 2.5
 
 
 def estimate_header_height(mata: str, judul: str, tanggal: str) -> float:
-    """Harus konsisten persis dengan draw_header()."""
     y = HEADER_Y_START
     if mata:    y += HEADER_H_MATA  + HEADER_LINE_GAP
     if judul:   y += HEADER_H_JUDUL + HEADER_LINE_GAP
     if tanggal: y += HEADER_H_TGL   + HEADER_LINE_GAP
-    y += HEADER_AFTER_LINE   # garis + padding
+    y += HEADER_AFTER_LINE
     return y
 
 
 def draw_header(pdf: FPDF, mata: str, judul: str, tanggal: str, a4_w_mm: float) -> float:
-    """
-    Cetak header identitas di dalam halaman A4.
-    Teks kecil & spasi minimal agar efisien.
-    Return: posisi Y absolut (mm) tempat foto pertama mulai.
-    """
     y        = HEADER_Y_START
     usable_w = a4_w_mm - 2 * PAGE_MARGIN_MM
 
@@ -204,12 +203,10 @@ def draw_header(pdf: FPDF, mata: str, judul: str, tanggal: str, a4_w_mm: float) 
         pdf.cell(usable_w, HEADER_H_TGL, f"Tanggal: {tanggal}", align="C")
         y += HEADER_H_TGL + HEADER_LINE_GAP
 
-    # Garis pemisah tipis
     pdf.set_draw_color(180, 180, 180)
     pdf.set_line_width(0.2)
     pdf.line(PAGE_MARGIN_MM, y + 0.3, a4_w_mm - PAGE_MARGIN_MM, y + 0.3)
 
-    # Reset ke default
     pdf.set_draw_color(0, 0, 0)
     pdf.set_line_width(BORDER_MM)
     pdf.set_text_color(0, 0, 0)
@@ -223,21 +220,57 @@ def draw_header(pdf: FPDF, mata: str, judul: str, tanggal: str, a4_w_mm: float) 
 # ═══════════════════════════════════════════════════════════════════════
 
 st.title("📸 Foto → PDF Waterfall")
-st.markdown(
-    "Upload foto (atau **Ctrl+V** langsung ke kotak upload), "
-    "atur urutan, dan jadikan satu file PDF dengan *layout waterfall* yang rapi."
-)
+st.markdown("Upload foto, atur urutan, dan jadikan satu file PDF dengan *layout waterfall* yang rapi.")
 
-# ── File Uploader — satu-satunya cara input (termasuk paste clipboard) ─
-# Browser modern (Chrome/Edge) memungkinkan Ctrl+V langsung ke area upload.
+# ── Session state untuk gambar dari clipboard ─────────────────────────
+if "clipboard_images" not in st.session_state:
+    st.session_state.clipboard_images = []   # list of (bytes, filename)
+
+# ── Area Upload + Paste dalam satu blok visual ───────────────────────
 uploaded_files = st.file_uploader(
-    "➕ Tambahkan Foto — seret & lepas, klik, atau tekan Ctrl+V (JPG / PNG)",
+    "➕ Tambahkan Foto (JPG / JPEG / PNG) — seret & lepas atau klik untuk memilih file",
     type=["jpg", "jpeg", "png"],
     accept_multiple_files=True,
 )
 
-# ── Kumpulkan semua item ──────────────────────────────────────────────
-all_file_items = [(f.getvalue(), f.name) for f in (uploaded_files or [])]
+# Tombol paste clipboard (muncul hanya jika library tersedia)
+if PASTE_SUPPORTED:
+    paste_result = paste_image_button(
+        label="📋 Tempel dari Clipboard (Ctrl+V / Cmd+V)",
+        background_color="#f0f2f6",
+        hover_background_color="#dce0e8",
+        key="paste_btn",
+    )
+    # Simpan ke session_state hanya jika ada gambar baru
+    if paste_result and paste_result.image_data is not None:
+        buf = io.BytesIO()
+        paste_result.image_data.save(buf, format="PNG")
+        clip_bytes = buf.getvalue()
+        # Cegah duplikat sederhana: cek hash byte terakhir yang disimpan
+        new_hash = hashlib.md5(clip_bytes).hexdigest()
+        existing = [hashlib.md5(b).hexdigest() for b, _ in st.session_state.clipboard_images]
+        if new_hash not in existing:
+            fname_clip = f"clipboard_{len(st.session_state.clipboard_images) + 1}.png"
+            st.session_state.clipboard_images.append((clip_bytes, fname_clip))
+
+    if st.session_state.clipboard_images:
+        n_clip = len(st.session_state.clipboard_images)
+        c1, c2 = st.columns([5, 1])
+        with c1:
+            st.caption(f"📋 {n_clip} gambar dari clipboard ({', '.join(f for _, f in st.session_state.clipboard_images)})")
+        with c2:
+            if st.button("🗑️ Hapus", use_container_width=True, key="clear_clip"):
+                st.session_state.clipboard_images = []
+                st.rerun()
+else:
+    st.caption("ℹ️ Install `streamlit-paste-button` untuk mengaktifkan fitur Ctrl+V dari clipboard.")
+
+# ── Gabungkan semua sumber menjadi satu list ──────────────────────────
+all_file_items: list[tuple[bytes, str]] = []
+for f in (uploaded_files or []):
+    all_file_items.append((f.getvalue(), f.name))
+for img_bytes, fname in st.session_state.clipboard_images:
+    all_file_items.append((img_bytes, fname))
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -271,22 +304,13 @@ if all_file_items:
 
         # Fitur 1: Identitas Praktikan
         st.subheader("🪪 Identitas Praktikan (Opsional)")
-        st.caption(
-            "Dicetak sebagai header ringkas di dalam halaman A4 pertama. "
-            "Font kecil agar tidak mengurangi ruang gambar."
-        )
+        st.caption("Dicetak sebagai header ringkas di dalam halaman A4 pertama. Font kecil agar tidak mengurangi ruang gambar.")
         id_c1, id_c2 = st.columns(2)
         with id_c1:
-            mata_praktikum = st.text_input(
-                "Mata Praktikum", placeholder="Sistem Kendali Digital", key="id_mata"
-            )
-            judul_modul = st.text_input(
-                "Judul Modul", placeholder="Modul 1: Kontrol PID", key="id_judul"
-            )
+            mata_praktikum = st.text_input("Mata Praktikum", placeholder="Sistem Kendali Digital", key="id_mata")
+            judul_modul    = st.text_input("Judul Modul", placeholder="Modul 1: Kontrol PID", key="id_judul")
         with id_c2:
-            tanggal_praktikum = st.text_input(
-                "Tanggal Praktikum", placeholder="7 Juni 2026", key="id_tanggal"
-            )
+            tanggal_praktikum = st.text_input("Tanggal Praktikum", placeholder="7 Juni 2026", key="id_tanggal")
 
         st.divider()
 
@@ -297,14 +321,18 @@ if all_file_items:
             horizontal=True, key="page_orientation"
         )
 
-        # Fitur 3: Kolom
+        # Fitur 3: Kolom (max 10)
         _cols_default = 4 if orientation == "Landscape" else 3
         if st.session_state.get("_last_orient") != orientation:
             st.session_state["n_cols_slider"] = _cols_default
             st.session_state["_last_orient"]  = orientation
 
         n_cols = st.slider(
-            "Jumlah Kolom:", min_value=1, max_value=4, key="n_cols_slider"
+            "Jumlah Kolom:",
+            min_value=1,
+            max_value=10,
+            key="n_cols_slider",
+            help="Semakin banyak kolom, semakin kecil tiap gambar dalam PDF.",
         )
 
         st.divider()
@@ -336,9 +364,7 @@ if all_file_items:
     n_photos = len(image_data)
 
     # ── Caption toggle ────────────────────────────────────────────────
-    enable_captions = st.checkbox(
-        "🏷️ Tambahkan keterangan pada setiap foto", value=False
-    )
+    enable_captions = st.checkbox("🏷️ Tambahkan keterangan pada setiap foto", value=False)
     extra_h = CAPTION_HEIGHT_MM if enable_captions else 0
 
     init_captions(image_data)
@@ -349,9 +375,7 @@ if all_file_items:
         estimate_header_height(mata_praktikum, judul_modul, tanggal_praktikum)
         if has_header else TOP_MARGIN_MM
     )
-    est_pages = estimate_pages(
-        image_data, n_cols, A4_H, extra_h=extra_h, page1_start_y=page1_start_y
-    )
+    est_pages = estimate_pages(image_data, n_cols, A4_H, extra_h=extra_h, page1_start_y=page1_start_y)
 
     st.info(
         f"📷 **{n_photos}** foto siap diproses  |  "
