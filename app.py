@@ -294,31 +294,6 @@ if all_file_items:
     # ════════════════════════════════════════════════════════════════════
     with st.expander("⚙️ Pengaturan Lanjutan"):
 
-        # ── Fitur 1: Identitas Praktikan ──────────────────────────────
-        st.subheader("🪪 Identitas Praktikan (Opsional)")
-        st.caption("Jika diisi, akan dicetak sebagai header rapi di halaman pertama PDF.")
-
-        id_c1, id_c2 = st.columns(2)
-        with id_c1:
-            mata_praktikum = st.text_input(
-                "Mata Praktikum",
-                placeholder="Sistem Kendali Digital",
-                key="id_mata",
-            )
-            judul_modul = st.text_input(
-                "Judul Modul",
-                placeholder="Modul 1: Kontrol PID",
-                key="id_judul",
-            )
-        with id_c2:
-            tanggal_praktikum = st.text_input(
-                "Tanggal Praktikum",
-                placeholder="7 Juni 2026",
-                key="id_tanggal",
-            )
-
-        st.divider()
-
         # ── Fitur 2: Orientasi Halaman ────────────────────────────────
         st.subheader("📐 Layout Halaman")
         orientation = st.radio(
