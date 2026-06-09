@@ -253,21 +253,21 @@ def draw_header(
     usable_w = a4_w_mm - 2 * PAGE_MARGIN_MM
 
     if mata:
-        pdf.set_font("Helvetica", "B", 8)      # [CHANGE 2] was 10pt → 8pt Bold
+        pdf.set_font("Helvetica", "B", 8)       # [CHANGE 2] was 10pt → 8pt Bold
         pdf.set_text_color(0, 0, 0)
         pdf.set_xy(PAGE_MARGIN_MM, y)
         pdf.cell(usable_w, 4.0, mata, align="C")  # [CHANGE 2] cell h: 6mm → 4mm
         y += 4.0 + line_gap
 
     if judul:
-        pdf.set_font("Helvetica", "", 7)       # [CHANGE 2] was 8pt → 7pt
+        pdf.set_font("Helvetica", "", 7)        # [CHANGE 2] was 8pt → 7pt
         pdf.set_text_color(50, 50, 50)
         pdf.set_xy(PAGE_MARGIN_MM, y)
         pdf.cell(usable_w, 3.5, judul, align="C")  # [CHANGE 2] cell h: 5mm → 3.5mm
         y += 3.5 + line_gap
 
     if tanggal:
-        pdf.set_font("Helvetica", "I", 6)      # [CHANGE 2] was 7pt → 6pt Italic
+        pdf.set_font("Helvetica", "I", 6)       # [CHANGE 2] was 7pt → 6pt Italic
         pdf.set_text_color(90, 90, 90)
         pdf.set_xy(PAGE_MARGIN_MM, y)
         pdf.cell(usable_w, 3.0, f"Tanggal: {tanggal}", align="C")  # [CHANGE 2] cell h: 4mm → 3mm
@@ -335,7 +335,7 @@ with st.container(border=True):   # [CHANGE 1] container terpadu
 
     # [CHANGE 1] Status clipboard tampil di dalam container yang sama
     if st.session_state.clipboard_images:
-        n_clip   = len(st.session_state.clipboard_images)
+        n_clip        = len(st.session_state.clipboard_images)
         info_c, del_c = st.columns([5, 1])
         with info_c:
             st.caption(f"📋 {n_clip} gambar dari clipboard siap diproses.")
@@ -349,7 +349,7 @@ with st.container(border=True):   # [CHANGE 1] container terpadu
 #  Keduanya diperlakukan identik dalam satu list — tidak ada perbedaan
 #  antara gambar upload dan gambar paste dari titik ini ke bawah.
 # ────────────────────────────────────────────────────────────────────────
-all_file_items = []   # list of (bytes, filename)
+all_file_items: list[tuple[bytes, str]] = []  # list of (bytes, filename)
 for f in (uploaded_files or []):
     all_file_items.append((f.getvalue(), f.name))
 for img_bytes, fname in st.session_state.clipboard_images:
@@ -471,7 +471,7 @@ if all_file_items:
         A4_W = A4_W_PORTRAIT   # 210mm
         A4_H = A4_H_PORTRAIT   # 297mm
 
-    # [CHANGE 3] IMG_WIDTH_MM dihitung dari n_cols yang bisa sampai 10
+    # [CHANGE 3] IMG_WIDTH_MM dihitung dari n_cols yang bisa sampai 10;
     #            compute_img_width memiliki guard max(1, n_cols) untuk keamanan
     IMG_WIDTH_MM   = compute_img_width(A4_W, n_cols)
     LEFT_MARGIN_MM = PAGE_MARGIN_MM
@@ -486,7 +486,7 @@ if all_file_items:
         )
 
     # ── Proses semua gambar ───────────────────────────────────────────
-    image_data = []
+    image_data: list[tuple] = []
     for file_bytes, fname in all_file_items:
         img, h_mm = process_image_data(file_bytes, IMG_WIDTH_MM)
         if img:
