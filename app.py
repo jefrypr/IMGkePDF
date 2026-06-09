@@ -288,61 +288,191 @@ def draw_header(
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  GLOBAL CSS INJECTION — Upload Zone & Paste Button Redesign
+#  Diinjeksikan sekali di awal UI, berlaku untuk seluruh halaman.
+# ═══════════════════════════════════════════════════════════════════════
+st.markdown("""
+<style>
+/* ── Upload zone card: target container yang berisi file uploader ── */
+[data-testid="stVerticalBlockBorderWrapper"]:has([data-testid="stFileUploader"]) {
+    background: linear-gradient(150deg, #F5F7FF 0%, #EDEEFF 100%) !important;
+    border: 2px dashed #A5B4FC !important;
+    border-radius: 16px !important;
+    padding: 4px 8px 10px 8px !important;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:has([data-testid="stFileUploader"]):hover {
+    border-color: #6366F1 !important;
+    box-shadow: 0 4px 24px rgba(99,102,241,0.10) !important;
+}
+
+/* ── File uploader inner drop zone ─────────────────────────────── */
+[data-testid="stFileUploader"] section {
+    border-radius: 10px !important;
+    border: 1.5px dashed #C7D2FE !important;
+    background: rgba(255,255,255,0.75) !important;
+    backdrop-filter: blur(4px) !important;
+}
+[data-testid="stFileUploader"] section:hover {
+    border-color: #818CF8 !important;
+    background: rgba(255,255,255,0.95) !important;
+}
+
+/* ── Clipboard status badge ─────────────────────────────────────── */
+.clip-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #EEF2FF;
+    border: 1.5px solid #C7D2FE;
+    border-radius: 10px;
+    padding: 9px 14px;
+    margin: 6px 0 2px 0;
+}
+.clip-badge-text {
+    color: #4338CA;
+    font-size: 0.84rem;
+    font-weight: 500;
+    flex: 1;
+}
+
+/* ── "atau" divider label ───────────────────────────────────────── */
+.or-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 2px 10px 2px;
+}
+.or-divider-line {
+    flex: 1;
+    height: 1px;
+    background: #E0E7FF;
+}
+.or-divider-text {
+    color: #A5B4FC;
+    font-size: 0.70rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+/* ── Hapus clipboard button: subtle red ghost ───────────────────── */
+[data-testid="stBaseButton-secondary"][kind="secondary"] {
+    border-color: #FECACA !important;
+    color: #DC2626 !important;
+}
+[data-testid="stBaseButton-secondary"][kind="secondary"]:hover {
+    background: #FEF2F2 !important;
+    border-color: #F87171 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  UI UTAMA
 # ═══════════════════════════════════════════════════════════════════════
 
-st.title("📸 Foto → PDF Waterfall")
-st.markdown(
-    "Upload foto, atur urutan, dan jadikan satu file PDF "
-    "dengan *layout waterfall* yang rapi."
-)
+# ── Page header ──────────────────────────────────────────────────────
+st.markdown("""
+<div style="margin-bottom: 4px;">
+  <h2 style="margin:0; font-size:1.55rem; font-weight:700; color:#1E1B4B;
+             letter-spacing:-0.02em;">
+    📸 Foto → PDF Waterfall
+  </h2>
+  <p style="margin:4px 0 18px 0; font-size:0.875rem; color:#6B7280;">
+    Upload foto, atur urutan, dan ekspor ke satu file PDF dengan
+    <em>layout waterfall</em> yang rapi.
+  </p>
+</div>
+""", unsafe_allow_html=True)
 
 # ────────────────────────────────────────────────────────────────────────
-#  [CHANGE 1] UNIFIED UPLOAD UX
-#  File uploader dan tombol paste clipboard disatukan dalam satu container
-#  bergaris sehingga terlihat sebagai satu area input yang kohesif.
+#  UNIFIED UPLOAD UX — container bergaya dengan CSS injection di atas
 # ────────────────────────────────────────────────────────────────────────
 if "clipboard_images" not in st.session_state:
     st.session_state.clipboard_images = []
 
-with st.container(border=True):   # [CHANGE 1] container terpadu
+with st.container(border=True):
+
+    # ── Custom header dalam card ──────────────────────────────────────
+    st.markdown("""
+    <div style="display:flex; align-items:center; gap:10px; padding: 6px 2px 2px 2px;">
+      <div style="font-size:1.6rem; line-height:1;">📁</div>
+      <div>
+        <div style="font-weight:600; font-size:0.92rem; color:#1E1B4B;
+                    line-height:1.3;">Tambahkan Foto</div>
+        <div style="font-size:0.73rem; color:#6B7280; margin-top:1px;">
+          Seret &amp; lepas, atau klik untuk memilih file · JPG · JPEG · PNG
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── File uploader (label disembunyikan, diganti header kustom) ────
     uploaded_files = st.file_uploader(
-        "➕ Tambahkan Foto (JPG, JPEG, PNG)",
+        "Pilih foto",                   # label aksesibel (disembunyikan)
         type=["jpg", "jpeg", "png"],
         accept_multiple_files=True,
+        label_visibility="collapsed",   # header kustom di atas sudah menjelaskan
     )
 
-    # [CHANGE 1] Tombol paste di kanan-tengah, dalam container yang sama
+    # ── Paste button + divider ────────────────────────────────────────
     if PASTE_SUPPORTED:
-        _, btn_col = st.columns([1.5, 1])   # [CHANGE 1] right-center alignment
-        with btn_col:
-            paste_result = paste_image_button(
-                label="📋 Tempel dari Clipboard",
-                background_color="#f0f2f6",
-                hover_background_color="#dce0e8",
-            )
+        # Divider "atau"
+        st.markdown("""
+        <div class="or-divider">
+          <div class="or-divider-line"></div>
+          <span class="or-divider-text">atau</span>
+          <div class="or-divider-line"></div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        # [CHANGE 1] Gambar dari clipboard langsung masuk pool yang sama
+        # Paste button — warna indigo yang jelas & konsisten dengan brand card
+        paste_result = paste_image_button(
+            label="📋  Tempel dari Clipboard",
+            background_color="#4F46E5",        # indigo-600: jelas, tidak bertabrakan
+            hover_background_color="#3730A3",  # indigo-800: feedback hover tegas
+        )
+
+        # Simpan gambar clipboard ke session state
         if paste_result and paste_result.image_data is not None:
             buf = io.BytesIO()
             paste_result.image_data.save(buf, format="PNG")
             fname_clip = f"clipboard_{len(st.session_state.clipboard_images) + 1}.png"
             st.session_state.clipboard_images.append((buf.getvalue(), fname_clip))
-    else:
-        st.caption(
-            "ℹ️ Install `streamlit-paste-button` untuk aktifkan fitur paste clipboard."
-        )
 
-    # [CHANGE 1] Status clipboard tampil di dalam container yang sama
+    else:
+        # Info install — styled warm banner, bukan caption abu-abu polos
+        st.markdown("""
+        <div style="background:#FFFBEB; border:1.5px solid #FDE68A; border-radius:10px;
+                    padding:9px 13px; margin-top:10px; font-size:0.80rem; color:#92400E;
+                    display:flex; align-items:center; gap:7px;">
+          <span>💡</span>
+          <span>Install <code>streamlit-paste-button</code> untuk aktifkan fitur
+                tempel dari clipboard.</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Status clipboard — badge styled, bukan caption polos ─────────
     if st.session_state.clipboard_images:
-        n_clip        = len(st.session_state.clipboard_images)
-        info_c, del_c = st.columns([5, 1])
-        with info_c:
-            st.caption(f"📋 {n_clip} gambar dari clipboard siap diproses.")
-        with del_c:
-            if st.button("🗑️ Hapus", key="btn_del_clipboard", use_container_width=True):
-                st.session_state.clipboard_images = []
-                st.rerun()
+        n_clip = len(st.session_state.clipboard_images)
+        st.markdown(f"""
+        <div class="clip-badge">
+          <span style="font-size:1rem;">✅</span>
+          <span class="clip-badge-text">
+            {n_clip} gambar dari clipboard siap diproses
+          </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if st.button(
+            "🗑️  Hapus semua dari clipboard",
+            key="btn_del_clipboard",
+            use_container_width=True,
+        ):
+            st.session_state.clipboard_images = []
+            st.rerun()
 
 # ────────────────────────────────────────────────────────────────────────
 #  [CHANGE 1] Gabungkan semua sumber: file uploader + clipboard
