@@ -181,7 +181,7 @@ if "clipboard_hashes" not in st.session_state:
 if PASTE_SUPPORTED:
     paste_result = paste_image_button(
         label="📋 Paste from Clipboard",
-        background_color="#1F2532",
+        background_color="#262730",
         hover_background_color="#0e1117",
     )
     if paste_result and paste_result.image_data is not None:
