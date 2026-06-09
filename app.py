@@ -27,8 +27,8 @@ A4_W_PORTRAIT     = 210   # lebar A4 portrait (mm)
 A4_H_PORTRAIT     = 297   # tinggi A4 portrait (mm)
 GAP_MM            = 1
 PAGE_MARGIN_MM    = 2
-TOP_MARGIN_MM     = 0
-BOTTOM_MARGIN_MM  = 0
+TOP_MARGIN_MM     = 1
+BOTTOM_MARGIN_MM  = 1
 BORDER_MM         = 0.5
 CAPTION_HEIGHT_MM = 4.0
 CAPTION_FONT_PT   = 5
@@ -39,7 +39,6 @@ CAPTION_FONT_PT   = 5
 # ═══════════════════════════════════════════════════════════════════════
 
 def cap_key(i: int, fname: str) -> str:
-    """Widget key aman berbasis hash nama file (hindari karakter ilegal)."""
     h = hashlib.md5(fname.encode("utf-8", errors="replace")).hexdigest()[:8]
     return f"wfc_{i}_{h}"
 
@@ -49,7 +48,6 @@ def default_caption(fname: str) -> str:
 
 
 def init_captions(image_data: list):
-    """Inisialisasi semua widget key caption SEBELUM rendering apapun."""
     for i, (_, _, fname) in enumerate(image_data):
         k = cap_key(i, fname)
         if k not in st.session_state:
@@ -57,7 +55,6 @@ def init_captions(image_data: list):
 
 
 def get_caption(i: int, fname: str) -> str:
-    """Baca caption langsung dari session state (no intermediate dict)."""
     val = st.session_state.get(cap_key(i, fname), "").strip()
     return val if val else default_caption(fname)
 
@@ -71,38 +68,24 @@ def mm_to_px(mm: float) -> int:
 
 
 def compute_img_width(a4_w_mm: float, n_cols: int) -> float:
-    """
-    Hitung lebar kolom gambar secara dinamis agar tidak overflow.
-    Formula: (lebar_halaman - 2×margin - (n_kolom-1)×gap) / n_kolom
-    """
     return (a4_w_mm - 2 * PAGE_MARGIN_MM - (n_cols - 1) * GAP_MM) / n_cols
 
 
 def get_exif_date(file_bytes: bytes) -> datetime:
-    """
-    Fitur 5: Ekstrak tanggal pengambilan foto dari metadata Exif.
-    Fallback ke datetime.min jika tidak ada Exif (foto screenshot, dll.)
-    sehingga aplikasi tidak crash dan foto tetap masuk urutan.
-    """
     try:
         img = Image.open(io.BytesIO(file_bytes))
         exif_data = img._getexif()
         if exif_data:
-            dt_str = exif_data.get(36867)   # Tag 36867 = DateTimeOriginal
+            dt_str = exif_data.get(36867)
             if dt_str:
                 return datetime.strptime(dt_str, "%Y:%m:%d %H:%M:%S")
     except Exception:
         pass
-    return datetime.min   # fallback aman: tidak crash, muncul di awal urutan
+    return datetime.min
 
 
 @st.cache_data
 def process_image_data(file_bytes: bytes, img_width_mm: float):
-    """
-    Buka, rotasi (jika portrait), dan resize gambar sesuai lebar kolom.
-    img_width_mm ikut sebagai parameter agar cache otomatis invalid
-    saat jumlah kolom atau orientasi berubah.
-    """
     try:
         img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
         if img.height > img.width:
@@ -121,16 +104,7 @@ def process_image_data(file_bytes: bytes, img_width_mm: float):
 #  HELPER: ALGORITMA WATERFALL & ESTIMASI HALAMAN
 # ═══════════════════════════════════════════════════════════════════════
 
-def simulate_waterfall(
-    image_list: list,
-    n_cols: int,
-    a4_h_mm: float,
-    extra_h: float = 0,
-) -> list:
-    """
-    Simulasi penempatan foto ke kolom (identik dengan logika PDF generation).
-    Return: list indeks kolom untuk tiap foto.
-    """
+def simulate_waterfall(image_list, n_cols, a4_h_mm, extra_h=0):
     if not image_list:
         return []
     max_y       = a4_h_mm - BOTTOM_MARGIN_MM
@@ -149,21 +123,11 @@ def simulate_waterfall(
     return col_assign
 
 
-def estimate_pages(
-    image_list: list,
-    n_cols: int,
-    a4_h_mm: float,
-    extra_h: float = 0,
-    page1_start_y: float = 0,
-) -> int:
-    """
-    Hitung estimasi jumlah halaman PDF.
-    page1_start_y: Y awal di halaman 1 (offset karena header identitas).
-    """
+def estimate_pages(image_list, n_cols, a4_h_mm, extra_h=0):
     if not image_list:
         return 0
     max_y       = a4_h_mm - BOTTOM_MARGIN_MM
-    col_heights = [page1_start_y] * n_cols
+    col_heights = [TOP_MARGIN_MM] * n_cols
     pages       = 1
     for _, h_mm, _ in image_list:
         slot_h  = h_mm + extra_h
@@ -178,7 +142,6 @@ def estimate_pages(
 
 
 def fit_caption(pdf: FPDF, text: str, max_width_mm: float) -> str:
-    """Potong teks agar muat dalam lebar kolom, tambah '...' jika dipotong."""
     if not text:
         return ""
     original = text
@@ -192,82 +155,6 @@ def fit_caption(pdf: FPDF, text: str, max_width_mm: float) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  HELPER: HEADER IDENTITAS (Fitur 1) — kompak, font kecil, tanpa background
-# ═══════════════════════════════════════════════════════════════════════
-
-# Konstanta header yang sangat kompak agar tidak boros ruang gambar
-_HDR_LINE_GAP   = 0.4   # jarak antar baris (mm)
-_HDR_MATA_H     = 3.5   # tinggi cell mata praktikum (mm), font 7pt bold
-_HDR_JUDUL_H    = 3.0   # tinggi cell judul modul (mm), font 6pt
-_HDR_TGL_H      = 2.8   # tinggi cell tanggal (mm), font 5pt italic
-_HDR_SEP_PAD    = 1.5   # padding setelah garis pemisah (mm)
-_HDR_TOP_PAD    = 1.5   # padding dari tepi atas kertas (mm)
-
-
-def estimate_header_height(mata: str, judul: str, tanggal: str) -> float:
-    """
-    Estimasi tinggi header (mm) SEBELUM PDF di-generate.
-    Konsisten dengan draw_header() agar estimasi halaman akurat.
-    """
-    y = _HDR_TOP_PAD
-    if mata:    y += _HDR_MATA_H + _HDR_LINE_GAP
-    if judul:   y += _HDR_JUDUL_H + _HDR_LINE_GAP
-    if tanggal: y += _HDR_TGL_H + _HDR_LINE_GAP
-    y += _HDR_SEP_PAD   # garis tipis + padding bawah
-    return y
-
-
-def draw_header(
-    pdf: FPDF,
-    mata: str,
-    judul: str,
-    tanggal: str,
-    a4_w_mm: float,
-) -> float:
-    """
-    Cetak header identitas praktikan di dalam area halaman A4 (tanpa background).
-    Huruf kecil & kompak agar tidak memakan ruang gambar secara signifikan.
-    Return: posisi Y absolut (mm) tepat setelah header.
-    """
-    y        = _HDR_TOP_PAD
-    usable_w = a4_w_mm - 2 * PAGE_MARGIN_MM
-
-    if mata:
-        pdf.set_font("Helvetica", "B", 7)       # bold 7pt — kecil tapi terbaca
-        pdf.set_text_color(20, 20, 20)
-        pdf.set_xy(PAGE_MARGIN_MM, y)
-        pdf.cell(usable_w, _HDR_MATA_H, mata, align="C")
-        y += _HDR_MATA_H + _HDR_LINE_GAP
-
-    if judul:
-        pdf.set_font("Helvetica", "", 6)        # regular 6pt
-        pdf.set_text_color(50, 50, 50)
-        pdf.set_xy(PAGE_MARGIN_MM, y)
-        pdf.cell(usable_w, _HDR_JUDUL_H, judul, align="C")
-        y += _HDR_JUDUL_H + _HDR_LINE_GAP
-
-    if tanggal:
-        pdf.set_font("Helvetica", "I", 5)       # italic 5pt
-        pdf.set_text_color(90, 90, 90)
-        pdf.set_xy(PAGE_MARGIN_MM, y)
-        pdf.cell(usable_w, _HDR_TGL_H, f"Tanggal: {tanggal}", align="C")
-        y += _HDR_TGL_H + _HDR_LINE_GAP
-
-    # Garis pemisah sangat tipis
-    pdf.set_draw_color(200, 200, 200)
-    pdf.set_line_width(0.2)
-    pdf.line(PAGE_MARGIN_MM, y + 0.3, a4_w_mm - PAGE_MARGIN_MM, y + 0.3)
-
-    # Reset ke default
-    pdf.set_draw_color(0, 0, 0)
-    pdf.set_line_width(BORDER_MM)
-    pdf.set_text_color(0, 0, 0)
-    y += _HDR_SEP_PAD
-
-    return y   # Y absolut awal foto pertama
-
-
-# ═══════════════════════════════════════════════════════════════════════
 #  UI UTAMA
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -277,20 +164,14 @@ st.markdown(
     "dengan *layout waterfall* yang rapi."
 )
 
-# ────────────────────────────────────────────────────────────────────────
-#  Upload via File Uploader
-# ────────────────────────────────────────────────────────────────────────
+# ── File Uploader ─────────────────────────────────────────────────────
 uploaded_files = st.file_uploader(
     "➕ Tambahkan Foto (JPG, JPEG, PNG)",
     type=["jpg", "jpeg", "png"],
     accept_multiple_files=True,
 )
 
-# ────────────────────────────────────────────────────────────────────────
-#  Fitur 6: Upload via Clipboard Paste
-#  BUG FIX: paste_image_button mengembalikan gambar terakhir di SETIAP rerun.
-#  Solusi: simpan hash setiap gambar yang sudah ditambahkan; skip duplikat.
-# ────────────────────────────────────────────────────────────────────────
+# ── Fitur 6: Clipboard Paste ──────────────────────────────────────────
 if "clipboard_images" not in st.session_state:
     st.session_state.clipboard_images = []
 
@@ -300,15 +181,14 @@ if "clipboard_hashes" not in st.session_state:
 if PASTE_SUPPORTED:
     paste_result = paste_image_button(
         label="📋 Tempel dari Clipboard (Ctrl+V / Cmd+V)",
-        background_color="#f0f2f6",
-        hover_background_color="#dce0e8",
+        background_color="#1F2532",
+        hover_background_color="#0e1117",
     )
     if paste_result and paste_result.image_data is not None:
         buf = io.BytesIO()
         paste_result.image_data.save(buf, format="PNG")
         img_bytes = buf.getvalue()
-        # Hanya tambahkan jika hash belum pernah disimpan sebelumnya
-        img_hash = hashlib.md5(img_bytes).hexdigest()
+        img_hash  = hashlib.md5(img_bytes).hexdigest()
         if img_hash not in st.session_state.clipboard_hashes:
             st.session_state.clipboard_hashes.add(img_hash)
             fname_clip = f"clipboard_{len(st.session_state.clipboard_images) + 1}.png"
@@ -317,24 +197,17 @@ if PASTE_SUPPORTED:
     if st.session_state.clipboard_images:
         c1, c2 = st.columns([4, 1])
         with c1:
-            st.caption(
-                f"📋 {len(st.session_state.clipboard_images)} gambar dari clipboard ditambahkan."
-            )
+            st.caption(f"📋 {len(st.session_state.clipboard_images)} gambar dari clipboard ditambahkan.")
         with c2:
             if st.button("🗑️ Hapus Semua", use_container_width=True):
                 st.session_state.clipboard_images = []
-                st.session_state.clipboard_hashes = set()   # reset hash juga
+                st.session_state.clipboard_hashes = set()
                 st.rerun()
 else:
-    st.caption(
-        "ℹ️ Fitur paste clipboard tidak aktif. "
-        "Pastikan `streamlit-paste-button` sudah terinstall."
-    )
+    st.caption("ℹ️ Fitur paste clipboard tidak aktif. Pastikan `streamlit-paste-button` sudah terinstall.")
 
-# ────────────────────────────────────────────────────────────────────────
-#  Gabungkan semua sumber: file uploader + clipboard
-# ────────────────────────────────────────────────────────────────────────
-all_file_items = []   # list of (bytes, filename)
+# ── Gabungkan semua sumber ────────────────────────────────────────────
+all_file_items = []
 for f in (uploaded_files or []):
     all_file_items.append((f.getvalue(), f.name))
 for img_bytes, fname in st.session_state.clipboard_images:
@@ -342,11 +215,10 @@ for img_bytes, fname in st.session_state.clipboard_images:
 
 
 # ════════════════════════════════════════════════════════════════════════
-#  Konten utama: hanya muncul jika ada gambar
+#  Konten utama
 # ════════════════════════════════════════════════════════════════════════
 if all_file_items:
 
-    # ── Baris kontrol utama: Urutan & Nama PDF ────────────────────────
     col1, col2 = st.columns(2)
     with col1:
         sort_mode = st.selectbox(
@@ -355,17 +227,12 @@ if all_file_items:
                 "Sesuai Urutan Upload",
                 "Nama File A → Z",
                 "Nama File Z → A",
-                "Waktu Pengambilan (Exif)",   # Fitur 5
+                "Waktu Pengambilan (Exif)",
             ],
         )
     with col2:
-        pdf_name = st.text_input(
-            "Nama File PDF:",
-            value="output_foto",
-            placeholder="output_foto"
-        )
+        pdf_name = st.text_input("Nama File PDF:", value="output_foto", placeholder="output_foto")
 
-    # ── Sorting (Fitur 5: Exif dengan safe fallback) ──────────────────
     if sort_mode == "Nama File A → Z":
         all_file_items = sorted(all_file_items, key=lambda x: x[1].lower())
     elif sort_mode == "Nama File Z → A":
@@ -373,40 +240,9 @@ if all_file_items:
     elif sort_mode == "Waktu Pengambilan (Exif)":
         all_file_items = sorted(all_file_items, key=lambda x: get_exif_date(x[0]))
 
-    # ════════════════════════════════════════════════════════════════════
-    #  ⚙️ Pengaturan Lanjutan (semua fitur opsional)
-    # ════════════════════════════════════════════════════════════════════
+    # ── Pengaturan Lanjutan ───────────────────────────────────────────
     with st.expander("⚙️ Pengaturan Lanjutan"):
 
-        # ── Fitur 1: Identitas Praktikan ──────────────────────────────
-        st.subheader("🪪 Identitas Praktikan (Opsional)")
-        st.caption(
-            "Jika diisi, dicetak sebagai header mini di dalam halaman pertama PDF "
-            "(font sangat kecil, tanpa background, tidak mengurangi kapasitas gambar secara signifikan)."
-        )
-
-        id_c1, id_c2 = st.columns(2)
-        with id_c1:
-            mata_praktikum = st.text_input(
-                "Mata Praktikum",
-                placeholder="Sistem Kendali Digital",
-                key="id_mata",
-            )
-            judul_modul = st.text_input(
-                "Judul Modul",
-                placeholder="Modul 1: Kontrol PID",
-                key="id_judul",
-            )
-        with id_c2:
-            tanggal_praktikum = st.text_input(
-                "Tanggal Praktikum",
-                placeholder="7 Juni 2026",
-                key="id_tanggal",
-            )
-
-        st.divider()
-
-        # ── Fitur 2: Orientasi Halaman ────────────────────────────────
         st.subheader("📐 Layout Halaman")
         orientation = st.radio(
             "Orientasi Halaman:",
@@ -415,9 +251,6 @@ if all_file_items:
             key="page_orientation",
         )
 
-        # ── Fitur 3: Jumlah Kolom Dinamis ─────────────────────────────
-        # Default: 3 (portrait) / 4 (landscape) — tidak berubah
-        # Max slider dinaikkan ke 10
         _cols_default = 4 if orientation == "Landscape" else 3
         if st.session_state.get("_last_orient") != orientation:
             st.session_state["n_cols_slider"] = _cols_default
@@ -426,38 +259,37 @@ if all_file_items:
         n_cols = st.slider(
             "Jumlah Kolom:",
             min_value=1,
-            max_value=10,          # ← dinaikkan dari 4 ke 10
+            max_value=10,
             key="n_cols_slider",
             help="Otomatis berubah ke 4 saat Landscape, 3 saat Portrait. Maks 10 kolom.",
         )
 
         st.divider()
 
-        # ── Fitur 4: Kualitas JPEG / Kompresi ────────────────────────
         st.subheader("🖼️ Kualitas Gambar")
         jpeg_quality = st.slider(
             "Kualitas JPEG:",
             min_value=10,
             max_value=100,
-            value=100,             # ← default diubah dari 80 ke 100
+            value=100,
             step=5,
             key="jpeg_quality_slider",
             help="Lebih tinggi = gambar lebih tajam tapi ukuran file lebih besar.",
         )
 
-    # ── Hitung dimensi halaman berdasarkan orientasi (Fitur 2) ────────
+    # ── Dimensi halaman ───────────────────────────────────────────────
     if orientation == "Landscape":
-        A4_W = A4_H_PORTRAIT   # 297mm → lebar landscape
-        A4_H = A4_W_PORTRAIT   # 210mm → tinggi landscape
+        A4_W = A4_H_PORTRAIT
+        A4_H = A4_W_PORTRAIT
     else:
-        A4_W = A4_W_PORTRAIT   # 210mm
-        A4_H = A4_H_PORTRAIT   # 297mm
+        A4_W = A4_W_PORTRAIT
+        A4_H = A4_H_PORTRAIT
 
     IMG_WIDTH_MM   = compute_img_width(A4_W, n_cols)
     LEFT_MARGIN_MM = PAGE_MARGIN_MM
     col_x          = [LEFT_MARGIN_MM + c * (IMG_WIDTH_MM + GAP_MM) for c in range(n_cols)]
 
-    # ── Proses semua gambar ───────────────────────────────────────────
+    # ── Proses gambar ─────────────────────────────────────────────────
     image_data = []
     for file_bytes, fname in all_file_items:
         img, h_mm = process_image_data(file_bytes, IMG_WIDTH_MM)
@@ -466,7 +298,6 @@ if all_file_items:
 
     n_photos = len(image_data)
 
-    # ── Checkbox Caption ──────────────────────────────────────────────
     enable_captions = st.checkbox(
         "🏷️ Tambahkan keterangan pada setiap foto",
         value=False,
@@ -474,19 +305,9 @@ if all_file_items:
     )
     extra_h = CAPTION_HEIGHT_MM if enable_captions else 0
 
-    # Inisialisasi caption state SEBELUM rendering apapun
     init_captions(image_data)
 
-    # ── Estimasi halaman (memperhitungkan tinggi header jika ada) ──────
-    has_header    = any([mata_praktikum, judul_modul, tanggal_praktikum])
-    page1_start_y = (
-        estimate_header_height(mata_praktikum, judul_modul, tanggal_praktikum)
-        if has_header
-        else TOP_MARGIN_MM
-    )
-    est_pages = estimate_pages(
-        image_data, n_cols, A4_H, extra_h=extra_h, page1_start_y=page1_start_y
-    )
+    est_pages = estimate_pages(image_data, n_cols, A4_H, extra_h=extra_h)
 
     st.info(
         f"📷 **{n_photos}** foto siap diproses  |  "
@@ -494,9 +315,7 @@ if all_file_items:
         f"📐 {orientation} · {n_cols} kolom · JPEG {jpeg_quality}"
     )
 
-    # ════════════════════════════════════════════════════════════════════
-    #  GENERATE PDF
-    # ════════════════════════════════════════════════════════════════════
+    # ── Generate PDF ──────────────────────────────────────────────────
     if st.button("✅ Generate PDF", type="primary", use_container_width=True):
         progress_bar = st.progress(0, text="Menyiapkan PDF...")
 
@@ -504,16 +323,8 @@ if all_file_items:
         pdf = FPDF(orientation=fpdf_orient, unit="mm", format="A4")
         pdf.add_page()
 
-        max_y = A4_H - BOTTOM_MARGIN_MM
-
-        if has_header:
-            first_y = draw_header(
-                pdf, mata_praktikum, judul_modul, tanggal_praktikum, A4_W
-            )
-        else:
-            first_y = TOP_MARGIN_MM
-
-        col_heights = [first_y] * n_cols
+        max_y       = A4_H - BOTTOM_MARGIN_MM
+        col_heights = [TOP_MARGIN_MM] * n_cols
 
         for i, (img, h_mm, fname) in enumerate(image_data):
             slot_h  = h_mm + extra_h
@@ -557,9 +368,7 @@ if all_file_items:
                 text=f"Memproses foto {i + 1}/{n_photos}..."
             )
 
-        safe_name    = "".join(
-            c for c in pdf_name if c.isalnum() or c in (" ", "_", "-")
-        ).strip()
+        safe_name    = "".join(c for c in pdf_name if c.isalnum() or c in (" ", "_", "-")).strip()
         output_fname = (safe_name or "output_foto") + ".pdf"
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
@@ -581,20 +390,14 @@ if all_file_items:
             use_container_width=True,
         )
 
-    # ════════════════════════════════════════════════════════════════════
-    #  PREVIEW GALERI
-    # ════════════════════════════════════════════════════════════════════
+    # ── Preview Galeri ────────────────────────────────────────────────
     with st.expander("👀 Lihat Preview Galeri Foto"):
         if enable_captions:
             hdr_col, btn_col = st.columns([4, 1])
             with hdr_col:
                 st.caption("✏️ Isi keterangan di bawah tiap foto. Kosongkan jika tidak perlu.")
             with btn_col:
-                if st.button(
-                    "🔄 Reset",
-                    help="Kembalikan semua keterangan ke nama file",
-                    use_container_width=True,
-                ):
+                if st.button("🔄 Reset", help="Kembalikan semua keterangan ke nama file", use_container_width=True):
                     for i, (_, _, fname) in enumerate(image_data):
                         st.session_state[cap_key(i, fname)] = default_caption(fname)
                     st.rerun()
@@ -622,7 +425,4 @@ if all_file_items:
                         st.caption(f"[{photo_idx + 1}] {fname}")
 
 else:
-    st.info(
-        "📂 Silakan upload foto untuk memulai. "
-        "Mendukung format **JPG**, **JPEG**, dan **PNG**."
-    )
+    st.info("📂 Silakan upload foto untuk memulai. Mendukung format **JPG**, **JPEG**, dan **PNG**.")
