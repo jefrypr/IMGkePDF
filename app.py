@@ -60,8 +60,8 @@ A4_W_PORTRAIT     = 210   # lebar A4 portrait (mm)
 A4_H_PORTRAIT     = 297   # tinggi A4 portrait (mm)
 GAP_MM            = 1
 PAGE_MARGIN_MM    = 2
-TOP_MARGIN_MM     = 0
-BOTTOM_MARGIN_MM  = 0
+TOP_MARGIN_MM     = 1
+BOTTOM_MARGIN_MM  = 1
 BORDER_MM         = 0.5
 CAPTION_HEIGHT_MM = 4.0
 CAPTION_FONT_PT   = 5
@@ -273,9 +273,9 @@ if "clipboard_images" not in st.session_state:
 
 if PASTE_SUPPORTED:
     paste_result = paste_image_button(
-        label="📋 Tempel dari Clipboard (Ctrl+V / Cmd+V)",
-        background_color="#f0f2f6",
-        hover_background_color="#dce0e8",
+        label="📋 Paste from Clipboard",
+        background_color="#1054C1",
+        hover_background_color="#0C4296",
     )
     if paste_result and paste_result.image_data is not None:
         buf = io.BytesIO()
