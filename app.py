@@ -7,64 +7,218 @@ import hashlib
 import io
 from datetime import datetime
 
-# ── Library Opsional: Clipboard Paste (Fitur 6) ───────────────────────
+# ── Library Opsional: Clipboard Paste ─────────────────────────────────
 try:
     from streamlit_paste_button import paste_image_button
     PASTE_SUPPORTED = True
 except ImportError:
     PASTE_SUPPORTED = False
 
-# ── Konfigurasi Halaman & Tema Custom ─────────────────────────────────
+# ── Konfigurasi Halaman ───────────────────────────────────────────────
 st.set_page_config(
     page_title="Foto Praktikum → PDF Print",
     page_icon="📸",
     layout="centered"
 )
 
-# Injeksi Custom CSS untuk memperindah UI
+# ── Tema Warna: Biru · Hitam · Abu-abu ───────────────────────────────
 st.markdown("""
 <style>
-    /* Mengubah warna teks utama dan background secara subtle */
-    div.stButton > button:first-child {
-        background-color: #0f52ba; /* Sapphire Blue untuk tombol primary */
-        color: white;
-        border-radius: 8px;
-        transition: all 0.3s ease;
-        border: none;
+    /* ── Root & Body ── */
+    html, body, [data-testid="stAppViewContainer"] {
+        background-color: #0f1923;
+        color: #d0d8e4;
     }
-    div.stButton > button:first-child:hover {
-        background-color: #0c4296;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    [data-testid="stMain"] {
+        background-color: #0f1923;
     }
-    .stProgress .st-bo {
-        background-color: #0f52ba;
+
+    /* ── Header / Title ── */
+    h1 {
+        color: #4fc3f7 !important;
+        font-weight: 700;
+        letter-spacing: -0.5px;
     }
-    /* Memperhalus tampilan expander */
-    .streamlit-expanderHeader {
+    h2, h3, h4 {
+        color: #90caf9 !important;
+    }
+
+    /* ── Paragraf & teks umum ── */
+    p, label, .stMarkdown, div[data-testid="stText"] {
+        color: #b0bec5 !important;
+    }
+
+    /* ── Input fields ── */
+    input[type="text"], textarea, .stTextInput input {
+        background-color: #1a2638 !important;
+        color: #e3eaf2 !important;
+        border: 1px solid #2c4a6e !important;
+        border-radius: 6px !important;
+    }
+    input[type="text"]:focus, textarea:focus {
+        border-color: #4fc3f7 !important;
+        box-shadow: 0 0 0 2px rgba(79, 195, 247, 0.2) !important;
+    }
+
+    /* ── Selectbox / Dropdown ── */
+    .stSelectbox div[data-baseweb="select"] > div {
+        background-color: #1a2638 !important;
+        border-color: #2c4a6e !important;
+        color: #e3eaf2 !important;
+        border-radius: 6px !important;
+    }
+
+    /* ── Slider ── */
+    .stSlider [data-baseweb="slider"] div[role="slider"] {
+        background-color: #4fc3f7 !important;
+        border-color: #4fc3f7 !important;
+    }
+    .stSlider [data-baseweb="slider"] div[data-testid="stThumbValue"] {
+        color: #4fc3f7 !important;
+    }
+    [data-testid="stSlider"] label {
+        color: #90caf9 !important;
+    }
+
+    /* ── Radio buttons ── */
+    .stRadio label { color: #b0bec5 !important; }
+    .stRadio [data-testid="stMarkdownContainer"] p { color: #b0bec5 !important; }
+
+    /* ── Checkbox ── */
+    .stCheckbox label span { color: #b0bec5 !important; }
+
+    /* ── Primary Button ── */
+    .stButton > button[kind="primary"],
+    button[data-testid="baseButton-primary"] {
+        background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%) !important;
+        color: #ffffff !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.3px;
+        box-shadow: 0 3px 10px rgba(21, 101, 192, 0.4) !important;
+        transition: all 0.2s ease;
+    }
+    .stButton > button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%) !important;
+        box-shadow: 0 5px 16px rgba(21, 101, 192, 0.55) !important;
+        transform: translateY(-1px);
+    }
+
+    /* ── Secondary Button ── */
+    .stButton > button[kind="secondary"],
+    button[data-testid="baseButton-secondary"] {
+        background-color: #1a2638 !important;
+        color: #90caf9 !important;
+        border: 1px solid #2c4a6e !important;
+        border-radius: 8px !important;
+        transition: all 0.2s ease;
+    }
+    .stButton > button[kind="secondary"]:hover {
+        background-color: #1e3050 !important;
+        border-color: #4fc3f7 !important;
+    }
+
+    /* ── Download Button ── */
+    .stDownloadButton > button {
+        background: linear-gradient(135deg, #00897b 0%, #00695c 100%) !important;
+        color: #ffffff !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        box-shadow: 0 3px 10px rgba(0, 137, 123, 0.35) !important;
+    }
+    .stDownloadButton > button:hover {
+        background: linear-gradient(135deg, #00acc1 0%, #00838f 100%) !important;
+        transform: translateY(-1px);
+    }
+
+    /* ── Info / Success / Warning boxes ── */
+    .stAlert[data-baseweb="notification"] {
+        border-radius: 8px !important;
+    }
+    div[data-testid="stNotification"] {
+        background-color: #0d2137 !important;
+        border-left: 4px solid #4fc3f7 !important;
+        border-radius: 8px !important;
+        color: #b0bec5 !important;
+    }
+    .stSuccess > div {
+        background-color: #0d2c1f !important;
+        border-left: 4px solid #00c853 !important;
+        color: #a5d6a7 !important;
+        border-radius: 8px !important;
+    }
+
+    /* ── Expander ── */
+    [data-testid="stExpander"] {
+        background-color: #141e2d !important;
+        border: 1px solid #1e3050 !important;
+        border-radius: 10px !important;
+        overflow: hidden;
+    }
+    [data-testid="stExpander"] summary {
+        color: #90caf9 !important;
         font-weight: 600;
-        color: #333333;
-        border-radius: 6px;
     }
-    /* Styling untuk area info/caption */
-    .stAlert {
-        border-radius: 8px;
+    [data-testid="stExpander"] summary:hover {
+        color: #4fc3f7 !important;
     }
+
+    /* ── Divider ── */
+    hr {
+        border-color: #1e3050 !important;
+    }
+
+    /* ── Caption / small text ── */
+    .stCaption, small {
+        color: #607d8b !important;
+    }
+
+    /* ── Progress bar ── */
+    [data-testid="stProgressBar"] > div > div {
+        background: linear-gradient(90deg, #1565c0, #4fc3f7) !important;
+    }
+
+    /* ── Info banner khusus (st.info) ── */
+    [data-testid="stAlertContainer"] {
+        background-color: #0d2137 !important;
+        border: 1px solid #1e3a5f !important;
+        border-radius: 8px !important;
+        color: #b0bec5 !important;
+    }
+
+    /* ── Columns separator ── */
+    [data-testid="column"] {
+        padding: 0 6px !important;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f1923; }
+    ::-webkit-scrollbar-thumb {
+        background: #2c4a6e;
+        border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: #4fc3f7; }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ── Konstanta Tetap (tidak bergantung orientasi/kolom) ────────────────
+# ── Konstanta Tetap ───────────────────────────────────────────────────
 DPI               = 300
-A4_W_PORTRAIT     = 210   # lebar A4 portrait (mm)
-A4_H_PORTRAIT     = 297   # tinggi A4 portrait (mm)
+A4_W_PORTRAIT     = 210
+A4_H_PORTRAIT     = 297
 GAP_MM            = 1
 PAGE_MARGIN_MM    = 2
-TOP_MARGIN_MM     = 1
-BOTTOM_MARGIN_MM  = 1
+TOP_MARGIN_MM     = 0
+BOTTOM_MARGIN_MM  = 0
 BORDER_MM         = 0.5
 CAPTION_HEIGHT_MM = 4.0
 CAPTION_FONT_PT   = 5
+
+# ── Header kompak: tinggi sangat kecil ───────────────────────────────
+HEADER_HEIGHT_MM  = 3.8   # total tinggi header dalam PDF (mm)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -72,22 +226,22 @@ CAPTION_FONT_PT   = 5
 # ═══════════════════════════════════════════════════════════════════════
 
 def cap_key(i: int, fname: str) -> str:
-    """Widget key aman berbasis hash nama file."""
     h = hashlib.md5(fname.encode("utf-8", errors="replace")).hexdigest()[:8]
     return f"wfc_{i}_{h}"
+
 
 def default_caption(fname: str) -> str:
     return os.path.splitext(fname)[0]
 
+
 def init_captions(image_data: list):
-    """Inisialisasi semua widget key caption SEBELUM rendering apapun."""
     for i, (_, _, fname) in enumerate(image_data):
         k = cap_key(i, fname)
         if k not in st.session_state:
             st.session_state[k] = default_caption(fname)
 
+
 def get_caption(i: int, fname: str) -> str:
-    """Baca caption langsung dari session state."""
     val = st.session_state.get(cap_key(i, fname), "").strip()
     return val if val else default_caption(fname)
 
@@ -99,12 +253,12 @@ def get_caption(i: int, fname: str) -> str:
 def mm_to_px(mm: float) -> int:
     return int(mm * DPI / 25.4)
 
+
 def compute_img_width(a4_w_mm: float, n_cols: int) -> float:
-    """Hitung lebar kolom gambar secara dinamis agar tidak overflow."""
     return (a4_w_mm - 2 * PAGE_MARGIN_MM - (n_cols - 1) * GAP_MM) / n_cols
 
+
 def get_exif_date(file_bytes: bytes) -> datetime:
-    """Ekstrak tanggal pengambilan foto dari metadata Exif."""
     try:
         img = Image.open(io.BytesIO(file_bytes))
         exif_data = img._getexif()
@@ -116,9 +270,9 @@ def get_exif_date(file_bytes: bytes) -> datetime:
         pass
     return datetime.min
 
+
 @st.cache_data
 def process_image_data(file_bytes: bytes, img_width_mm: float):
-    """Buka, rotasi, dan resize gambar sesuai lebar kolom."""
     try:
         img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
         if img.height > img.width:
@@ -134,11 +288,10 @@ def process_image_data(file_bytes: bytes, img_width_mm: float):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  HELPER: ALGORITMA WATERFALL & ESTIMASI HALAMAN
+#  HELPER: WATERFALL & ESTIMASI HALAMAN
 # ═══════════════════════════════════════════════════════════════════════
 
-def simulate_waterfall(image_list: list, n_cols: int, a4_h_mm: float, extra_h: float = 0) -> list:
-    """Simulasi penempatan foto ke kolom."""
+def simulate_waterfall(image_list, n_cols, a4_h_mm, extra_h=0):
     if not image_list:
         return []
     max_y       = a4_h_mm - BOTTOM_MARGIN_MM
@@ -156,8 +309,8 @@ def simulate_waterfall(image_list: list, n_cols: int, a4_h_mm: float, extra_h: f
         col_heights[min_col] += slot_h + GAP_MM
     return col_assign
 
-def estimate_pages(image_list: list, n_cols: int, a4_h_mm: float, extra_h: float = 0, page1_start_y: float = 0) -> int:
-    """Hitung estimasi jumlah halaman PDF."""
+
+def estimate_pages(image_list, n_cols, a4_h_mm, extra_h=0, page1_start_y=0):
     if not image_list:
         return 0
     max_y       = a4_h_mm - BOTTOM_MARGIN_MM
@@ -174,8 +327,8 @@ def estimate_pages(image_list: list, n_cols: int, a4_h_mm: float, extra_h: float
         col_heights[min_col] += slot_h + GAP_MM
     return pages
 
+
 def fit_caption(pdf: FPDF, text: str, max_width_mm: float) -> str:
-    """Potong teks agar muat dalam lebar kolom."""
     if not text:
         return ""
     original = text
@@ -189,61 +342,54 @@ def fit_caption(pdf: FPDF, text: str, max_width_mm: float) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  HELPER: HEADER IDENTITAS (Fitur 1 - Direvisi agar kecil & muat A4)
+#  HELPER: HEADER IDENTITAS — VERSI KOMPAK
+#  Seluruh info dipadatkan dalam 1 baris teks kecil (~3.8 mm total).
+#  Tidak ada background, tidak ada padding berlebih.
 # ═══════════════════════════════════════════════════════════════════════
 
 def estimate_header_height(mata: str, judul: str, tanggal: str) -> float:
-    """
-    Estimasi tinggi header yang sudah diperkecil untuk menghemat ruang.
-    """
-    y = 2.0          # margin atas header
-    if mata:    y += 4.0 + 0.5
-    if judul:   y += 3.0 + 0.5
-    if tanggal: y += 2.5 + 0.5
-    y += 2.0         # garis pemisah + padding bawah
-    return y
+    """Return tinggi header (mm); 0 jika semua field kosong."""
+    if not any([mata, judul, tanggal]):
+        return 0.0
+    return HEADER_HEIGHT_MM   # 1 baris teks + garis tipis
+
 
 def draw_header(pdf: FPDF, mata: str, judul: str, tanggal: str, a4_w_mm: float) -> float:
     """
-    Cetak header identitas dengan ukuran teks kecil dan efisien.
+    Header ultra-kompak: satu baris teks 5.5pt berisi semua info,
+    diikuti garis pemisah 0.2mm. Total tinggi ≈ 3.8 mm.
+    Tidak ada background; teks berwarna abu-abu gelap.
+    Return: Y absolut (mm) tempat foto pertama dimulai.
     """
-    y        = 2.0       # Jarak tipis dari tepi atas kertas
-    line_gap = 0.5       # Spasi antar baris dirapatkan
-    usable_w = a4_w_mm - 2 * PAGE_MARGIN_MM
+    if not any([mata, judul, tanggal]):
+        return TOP_MARGIN_MM
 
-    if mata:
-        pdf.set_font("Helvetica", "B", 9) # Font kecil tapi tetap terbaca sebagai judul utama
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_xy(PAGE_MARGIN_MM, y)
-        pdf.cell(usable_w, 4, mata, align="C")
-        y += 4 + line_gap
+    parts = []
+    if mata:    parts.append(mata)
+    if judul:   parts.append(judul)
+    if tanggal: parts.append(f"Tgl: {tanggal}")
+    text = "  ·  ".join(parts)
 
-    if judul:
-        pdf.set_font("Helvetica", "", 7)
-        pdf.set_text_color(60, 60, 60)
-        pdf.set_xy(PAGE_MARGIN_MM, y)
-        pdf.cell(usable_w, 3, judul, align="C")
-        y += 3 + line_gap
+    y         = 1.2   # jarak dari tepi atas (mm)
+    usable_w  = a4_w_mm - 2 * PAGE_MARGIN_MM
 
-    if tanggal:
-        pdf.set_font("Helvetica", "I", 6)
-        pdf.set_text_color(100, 100, 100)
-        pdf.set_xy(PAGE_MARGIN_MM, y)
-        pdf.cell(usable_w, 2.5, f"Tanggal Praktikum: {tanggal}", align="C")
-        y += 2.5 + line_gap
+    pdf.set_font("Helvetica", "", 5.5)
+    pdf.set_text_color(90, 90, 90)
+    pdf.set_xy(PAGE_MARGIN_MM, y)
+    pdf.cell(usable_w, 2.2, text, align="C")   # cell height 2.2 mm
 
-    # Garis pemisah tipis (abu-abu)
-    pdf.set_draw_color(180, 180, 180)
-    pdf.set_line_width(0.2)
-    pdf.line(PAGE_MARGIN_MM, y + 0.5, a4_w_mm - PAGE_MARGIN_MM, y + 0.5)
+    # Garis pemisah sangat tipis
+    pdf.set_draw_color(190, 190, 190)
+    pdf.set_line_width(0.15)
+    sep_y = y + 2.5
+    pdf.line(PAGE_MARGIN_MM, sep_y, a4_w_mm - PAGE_MARGIN_MM, sep_y)
 
-    # Reset warna & ketebalan garis ke default
+    # Reset draw ke default
     pdf.set_draw_color(0, 0, 0)
     pdf.set_line_width(BORDER_MM)
     pdf.set_text_color(0, 0, 0)
-    y += 2.0   # Padding tipis setelah garis sebelum foto pertama mulai
 
-    return y   # Y absolut awal foto pertama
+    return sep_y + 0.8   # Y awal foto ≈ 1.2 + 2.2 + 0.3 + 0.8 = 4.5 mm dari atas
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -252,30 +398,27 @@ def draw_header(pdf: FPDF, mata: str, judul: str, tanggal: str, a4_w_mm: float) 
 
 st.title("📸 Foto → PDF Waterfall")
 st.markdown(
-    "Upload foto, atur urutan, dan jadikan satu file PDF "
-    "dengan *layout waterfall* yang rapi."
+    "<p style='color:#607d8b;margin-top:-10px;'>Upload foto, atur urutan, "
+    "dan jadikan satu file PDF dengan <em>layout waterfall</em> yang rapi.</p>",
+    unsafe_allow_html=True
 )
 
-# ────────────────────────────────────────────────────────────────────────
-#  Upload via File Uploader
-# ────────────────────────────────────────────────────────────────────────
+# ── File Uploader ─────────────────────────────────────────────────────
 uploaded_files = st.file_uploader(
     "➕ Tambahkan Foto (JPG, JPEG, PNG)",
     type=["jpg", "jpeg", "png"],
     accept_multiple_files=True,
 )
 
-# ────────────────────────────────────────────────────────────────────────
-#  Fitur 6: Upload via Clipboard Paste
-# ────────────────────────────────────────────────────────────────────────
+# ── Clipboard Paste ───────────────────────────────────────────────────
 if "clipboard_images" not in st.session_state:
     st.session_state.clipboard_images = []
 
 if PASTE_SUPPORTED:
     paste_result = paste_image_button(
-        label="📋 Paste from Clipboard",
-        background_color="#1054C1",
-        hover_background_color="#0C4296",
+        label="📋 Tempel dari Clipboard (Ctrl+V / Cmd+V)",
+        background_color="#141e2d",
+        hover_background_color="#1e3050",
     )
     if paste_result and paste_result.image_data is not None:
         buf = io.BytesIO()
@@ -287,28 +430,28 @@ if PASTE_SUPPORTED:
         c1, c2 = st.columns([4, 1])
         with c1:
             st.caption(
-                f"📋 {len(st.session_state.clipboard_images)} gambar dari clipboard ditambahkan."
+                f"📋 {len(st.session_state.clipboard_images)} gambar dari clipboard."
             )
         with c2:
             if st.button("🗑️ Hapus Semua", use_container_width=True):
                 st.session_state.clipboard_images = []
                 st.rerun()
 else:
-    st.caption(
-        "ℹ️ Fitur paste clipboard tidak aktif. "
-        "Pastikan `streamlit-paste-button` sudah terinstall."
-    )
+    st.caption("ℹ️ Fitur paste clipboard tidak aktif — install `streamlit-paste-button`.")
 
-# ────────────────────────────────────────────────────────────────────────
-#  Gabungkan semua sumber
-# ────────────────────────────────────────────────────────────────────────
+# ── Gabungkan sumber ──────────────────────────────────────────────────
 all_file_items = []
 for f in (uploaded_files or []):
     all_file_items.append((f.getvalue(), f.name))
 for img_bytes, fname in st.session_state.clipboard_images:
     all_file_items.append((img_bytes, fname))
 
+
+# ════════════════════════════════════════════════════════════════════════
+#  Konten utama
+# ════════════════════════════════════════════════════════════════════════
 if all_file_items:
+
     col1, col2 = st.columns(2)
     with col1:
         sort_mode = st.selectbox(
@@ -327,6 +470,7 @@ if all_file_items:
             placeholder="output_foto"
         )
 
+    # Sorting
     if sort_mode == "Nama File A → Z":
         all_file_items = sorted(all_file_items, key=lambda x: x[1].lower())
     elif sort_mode == "Nama File Z → A":
@@ -334,13 +478,15 @@ if all_file_items:
     elif sort_mode == "Waktu Pengambilan (Exif)":
         all_file_items = sorted(all_file_items, key=lambda x: get_exif_date(x[0]))
 
-    # ════════════════════════════════════════════════════════════════════
-    #  ⚙️ Pengaturan Lanjutan
-    # ════════════════════════════════════════════════════════════════════
+    # ── Pengaturan Lanjutan ───────────────────────────────────────────
     with st.expander("⚙️ Pengaturan Lanjutan"):
-        st.subheader("🪪 Identitas Praktikan (Opsional)")
-        st.caption("Akan dicetak kecil di atas halaman pertama untuk menghemat ruang.")
 
+        # Identitas Praktikan
+        st.subheader("🪪 Identitas Praktikan (Opsional)")
+        st.caption(
+            "Jika diisi, tampil sebagai satu baris header tipis di atas halaman pertama — "
+            "tidak memakan ruang signifikan."
+        )
         id_c1, id_c2 = st.columns(2)
         with id_c1:
             mata_praktikum = st.text_input(
@@ -362,6 +508,7 @@ if all_file_items:
 
         st.divider()
 
+        # Orientasi & Kolom
         st.subheader("📐 Layout Halaman")
         orientation = st.radio(
             "Orientasi Halaman:",
@@ -378,35 +525,36 @@ if all_file_items:
         n_cols = st.slider(
             "Jumlah Kolom:",
             min_value=1,
-            max_value=10, # Maksimal ditingkatkan ke 10
+            max_value=10,          # ← diperluas ke 10
             key="n_cols_slider",
-            help="Otomatis berubah ke 4 saat Landscape dipilih, 3 saat Portrait.",
+            help="Default 3 (Portrait) / 4 (Landscape). Maksimal 10 kolom.",
         )
 
         st.divider()
 
+        # Kualitas JPEG
         st.subheader("🖼️ Kualitas Gambar")
         jpeg_quality = st.slider(
             "Kualitas JPEG:",
             min_value=10,
             max_value=100,
-            value=100, # Default ditingkatkan ke 100
+            value=100,             # ← default 100
             step=5,
             key="jpeg_quality_slider",
-            help="Lebih tinggi = gambar lebih tajam tapi ukuran file lebih besar.",
+            help="100 = kualitas penuh (lossless JPEG). Kurangi untuk file lebih kecil.",
         )
 
+    # ── Hitung dimensi halaman ────────────────────────────────────────
     if orientation == "Landscape":
-        A4_W = A4_H_PORTRAIT
-        A4_H = A4_W_PORTRAIT
+        A4_W, A4_H = A4_H_PORTRAIT, A4_W_PORTRAIT
     else:
-        A4_W = A4_W_PORTRAIT
-        A4_H = A4_H_PORTRAIT
+        A4_W, A4_H = A4_W_PORTRAIT, A4_H_PORTRAIT
 
     IMG_WIDTH_MM   = compute_img_width(A4_W, n_cols)
     LEFT_MARGIN_MM = PAGE_MARGIN_MM
     col_x          = [LEFT_MARGIN_MM + c * (IMG_WIDTH_MM + GAP_MM) for c in range(n_cols)]
 
+    # ── Proses gambar ─────────────────────────────────────────────────
     image_data = []
     for file_bytes, fname in all_file_items:
         img, h_mm = process_image_data(file_bytes, IMG_WIDTH_MM)
@@ -415,15 +563,16 @@ if all_file_items:
 
     n_photos = len(image_data)
 
+    # ── Caption ───────────────────────────────────────────────────────
     enable_captions = st.checkbox(
         "🏷️ Tambahkan keterangan pada setiap foto",
         value=False,
-        help="Aktifkan untuk menambahkan teks keterangan di bawah tiap foto dalam PDF.",
     )
     extra_h = CAPTION_HEIGHT_MM if enable_captions else 0
 
     init_captions(image_data)
 
+    # ── Estimasi halaman ──────────────────────────────────────────────
     has_header    = any([mata_praktikum, judul_modul, tanggal_praktikum])
     page1_start_y = (
         estimate_header_height(mata_praktikum, judul_modul, tanggal_praktikum)
@@ -435,8 +584,8 @@ if all_file_items:
     )
 
     st.info(
-        f"📷 **{n_photos}** foto siap diproses  |  "
-        f"📄 Estimasi **{est_pages}** halaman PDF  |  "
+        f"📷 **{n_photos}** foto siap diproses  ·  "
+        f"📄 Estimasi **{est_pages}** halaman PDF  ·  "
         f"📐 {orientation} · {n_cols} kolom · JPEG {jpeg_quality}"
     )
 
