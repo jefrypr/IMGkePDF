@@ -180,7 +180,7 @@ if "clipboard_hashes" not in st.session_state:
 
 if PASTE_SUPPORTED:
     paste_result = paste_image_button(
-        label="📋 Tempel dari Clipboard (Ctrl+V / Cmd+V)",
+        label="📋 Paste from Clipboard",
         background_color="#1F2532",
         hover_background_color="#0e1117",
     )
